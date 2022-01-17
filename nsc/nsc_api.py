@@ -208,6 +208,6 @@ class NeuralSurvivalCluster(DSMBase):
         x_permuted = x.copy()
         x_permuted[:, j] = x_permuted[:, j][permutation]
         performances[j].append(self.compute_nll(x_permuted, t, e))
-    return {j: np.mean((global_nll - np.array(performances[j]))/global_nll) for j in performances}, \
-           {j: 1.96 * np.std((global_nll - np.array(performances[j]))/global_nll) / np.sqrt(n) for j in performances}
+    return {j: np.mean((np.array(performances[j]) - global_nll)/global_nll) for j in performances}, \
+           {j: 1.96 * np.std((np.array(performances[j]) - global_nll)/global_nll) / np.sqrt(n) for j in performances}
           
