@@ -20,6 +20,7 @@ A full example with analysis is provided in `examples/Neural Survival Clustering
 
 ## Reproduce paper's results
 To reproduce the paper's results:
+
 0. Clone the repository with dependencies: `git clone git@github.com:Jeanselme/NeuralSurvivalClustering.git --recursive`
 1. Create a conda environment with all necessary libraries `pycox`, `lifelines`, `pysurvival`.
 2. Add path `export PYTHONPATH="$PWD:$PWD/DeepSurvivalMachines:$PYTHONPATH"`
