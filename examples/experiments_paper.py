@@ -15,8 +15,8 @@ x, t, e, _ = datasets.load_dataset(dataset)
 horizons = [0.25, 0.5, 0.75]
 times = np.quantile(t[e==1], horizons)
 
-max_epochs = 10
-grid_search = 1
+max_epochs = 1000
+grid_search = 100
 layers = [[50], [50, 50], [50, 50, 50], [100], [100, 100], [100, 100, 100]]
 
 # Models
