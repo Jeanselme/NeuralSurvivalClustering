@@ -15,8 +15,8 @@ x, t, e, _ = datasets.load_dataset(dataset)
 horizons = [0.25, 0.5, 0.75]
 times = np.quantile(t[e==1], horizons)
 
-max_epochs = 1000
-grid_search = 100
+max_epochs = 10
+grid_search = 1
 layers = [[50], [50, 50], [50, 50, 50], [100], [100, 100], [100, 100, 100]]
 
 # Models
@@ -70,6 +70,16 @@ param_grid = {
     'penalizer' : [1e-3, 1.],
 }
 CoxExperiment.create(param_grid, n_iter = grid_search, path = 'Results/{}_cox'.format(dataset), times = times).train(x, t, e)
+
+## SuMoNet
+param_grid = {
+    'epochs': [max_epochs],
+    'learning_rate' : [1e-3, 1e-4],
+    'batch': [100, 250],
+    'layers_surv': layers,
+    'layers' : layers
+}
+SuMoExperiment.create(param_grid, n_iter = grid_search, path = 'Results/{}_sumo'.format(dataset), times = times).train(x, t, e)
 
 ## NSC
 param_grid = {

@@ -4,3 +4,6 @@
 [submodule "DeepSurvivalMachines"]
 	path = DeepSurvivalMachines
 	url = git@github.com:Jeanselme/DeepSurvivalMachines.git
+[submodule "SuMo-net"]
+	path = SuMo-net
+	url = git@github.com:Jeanselme/SuMo-net.git

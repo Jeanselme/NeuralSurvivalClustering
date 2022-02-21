@@ -23,7 +23,7 @@ To reproduce the paper's results:
 
 0. Clone the repository with dependencies: `git clone git@github.com:Jeanselme/NeuralSurvivalClustering.git --recursive`
 1. Create a conda environment with all necessary libraries `pycox`, `lifelines`, `pysurvival`.
-2. Add path `export PYTHONPATH="$PWD:$PWD/DeepSurvivalMachines:$PYTHONPATH"`
+2. Add path `export PYTHONPATH="$PWD:$PWD/DeepSurvivalMachines:$PWD/SuMo-net:$PYTHONPATH"`
 3. Run `examples/experiments_paper.py METABRIC`
 4. Repeat with `SUPPORT` and `SYNTHETIC`
 5. Analysis using `examples/Analysis.ipynb`
@@ -47,5 +47,5 @@ git clone git@github.com:Jeanselme/NeuralSurvivalClustering.git --recursive
 ```
 
 ## Requirements
-The model relies on `DeepSurvivalMachines`, `pytorch`, `numpy` and `tqdm`.  
+The model relies on `DeepSurvivalMachines`, `SuMo-net`, `pytorch`, `numpy` and `tqdm`.  
 To run the set of experiments `pycox`, `lifelines`, `pysurvival` are necessary.

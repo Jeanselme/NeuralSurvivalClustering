@@ -408,6 +408,21 @@ class NSCExperiment(DSMExperiment):
         t_norm = self.__preprocess__(t)
         return super().likelihood(x, t_norm, e)
 
+class SuMoExperiment(DSMExperiment):
+
+    def _fit_(self, x, t, e, x_val, t_val, e_val, hyperparameter):  
+        from sumo import SuMo
+
+        epochs = hyperparameter.pop('epochs', 1000)
+        batch = hyperparameter.pop('batch', 250)
+        lr = hyperparameter.pop('learning_rate', 0.001)
+
+        model = SuMo(**hyperparameter, cuda = torch.cuda.is_available())
+        model.fit(x, t, e, n_iter = epochs, bs = batch,
+                lr = lr, val_data = (x_val, t_val, e_val))
+        
+        return model
+
 class DCMExperiment(DSMExperiment):
 
     def save_results(self, x, t, e, times):
