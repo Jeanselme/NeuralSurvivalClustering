@@ -1,5 +1,5 @@
 # Neural Survival Cluster
-This repository allows to reproduce the results in [Neural Survival Clustering: Non parametric mixture of neural networks for survival clustering]()
+This repository allows to reproduce the results in [Neural Survival Clustering: Non parametric mixture of neural networks for survival clustering](https://proceedings.mlr.press/v174/jeanselme22a/jeanselme22a.pdf)
 This paper approaches survival analysis as a mixture of neural baselines whereby different baseline cumulative hazard functions are modelled using positive and monotone neural networks.
 
 ## Model
