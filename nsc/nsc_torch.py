@@ -98,28 +98,21 @@ class NeuralSurvivalClusterTorch(nn.Module):
     self.profile = create_representation(inputdim, layers + [self.k], act, self.dropout)
     self.latent = nn.ParameterList([nn.Parameter(torch.randn((1, self.representation))) for _ in range(self.k)])
     self.outcome = nn.ModuleList([create_representation_positive(1 + self.representation, layers_surv + [risks], act_surv, self.dropout) for _ in range(self.k)])
-    self.competing = create_representation(inputdim, layers + [risks], act, self.dropout)
     self.soft = nn.Softmax(dim = 1)
 
   def forward(self, x, horizon, gradient = False):
-    if self.risks == 1:
-      betas = 1
-    else:
-      betas = self.soft(self.competing(x))
-
     if self.k == 1:
       alphas = torch.ones((len(x), self.k), requires_grad = True).float().to(x.device)
     else:
       alphas = self.profile(x)
 
-    # Compute intensity and cumulative function
+    # Compute intensity and cumulative function for each cluster
     cumulative, intensity = [], []
     for latent, outcome_competing in zip(self.latent, self.outcome):
       latent = latent.repeat(len(x), 1)
       tau_outcome = horizon.clone().detach().requires_grad_(gradient) # Copy with independent gradient
       outcome = outcome_competing(torch.cat((latent, tau_outcome.unsqueeze(1)), 1))
       outcome = outcome - outcome_competing(torch.cat((latent, torch.zeros_like(tau_outcome.unsqueeze(1))), 1))
-      outcome = betas * outcome
       cumulative.append(outcome.unsqueeze(-1))
       if gradient:
         int = []
