@@ -124,7 +124,7 @@ class NeuralSurvivalClusterTorch(nn.Module):
       if gradient:
         int = []
         for risk in range(self.risks):
-          int.append(grad(outcome[:, risk].mean(), tau_outcome, create_graph = True)[0].unsqueeze(1))
+          int.append(grad(outcome[:, risk].sum(), tau_outcome, create_graph = True)[0].unsqueeze(1))
         int = torch.cat(int, -1).unsqueeze(-1)
         intensity.append(int)
 
