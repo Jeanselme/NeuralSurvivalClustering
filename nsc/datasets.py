@@ -22,6 +22,6 @@ def load_dataset(dataset='SUPPORT', **kwargs):
 
     covariates = df.drop(['duration', 'event'], axis = 'columns')
     return StandardScaler().fit_transform(covariates.values).astype(float),\
-           df['duration'].values.astype(float) + 1,\
+           df['duration'].values.astype(float),\
            df['event'].values.astype(int),\
            covariates.columns
