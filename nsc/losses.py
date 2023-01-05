@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import numpy as np
 
-def total_loss(model, x, t, e, weight_balance = 1., eps = 1e-8):
+def total_loss(model, x, t, e, weight_balance = 1., eps = 1e-10):
 
   # Go through network
   cumulative, intensity, alphas = model.forward(x, t, gradient = True)
