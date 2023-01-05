@@ -114,6 +114,12 @@ class Experiment():
                 pickle.dump(obj, output)
             except Exception as e:
                 print('Unable to save object')
+
+    def __preprocessT__(self, t, train = False):
+        """
+            Preprocess the time, every time a function linked to the model is called
+        """
+        return t
                 
     def save_results(self, x, t, e, times):
         """
@@ -125,9 +131,9 @@ class Experiment():
             index = self.fold_assignment[self.fold_assignment == i].index
             model = self.best_model[i]
             if type(model) is dict:
-                pred = pd.concat([self._predict_(model[r], x[index], times, r) for r in self.risks], axis = 1)
+                pred = pd.concat([self._predict_(model[r], x[index], self.__preprocessT__(times), r) for r in self.risks], axis = 1)
             else:
-                pred = pd.concat([self._predict_(model, x[index], times, r) for r in self.risks], axis = 1)
+                pred = pd.concat([self._predict_(model, x[index], self.__preprocessT__(times), r) for r in self.risks], axis = 1)
             predictions.loc[index] = pred.values
 
         if self.tosave:
@@ -172,7 +178,7 @@ class Experiment():
             train_index = train_index[2*ten_percent:]
             
             x_train, x_dev, x_val = x[train_index], x[dev_index], x[val_index]
-            t_train, t_dev, t_val = t[train_index], t[dev_index], t[val_index]
+            t_train, t_dev, t_val = self.__preprocessT__(t[train_index], True), self.__preprocessT__(t[dev_index]), self.__preprocessT__(t[val_index])
             e_train, e_dev, e_val = e[train_index], e[dev_index], e[val_index]
 
             # Train on subset one domain
@@ -222,6 +228,7 @@ class Experiment():
             Compute the nll over the different folds
         """
         x = self.scaler.transform(x)
+        t = self.__preprocessT__(t)
         nll_fold = {}
 
         for i in self.best_model:
@@ -234,27 +241,6 @@ class Experiment():
                 nll_fold[i] = self._nll_(model, x[index], t[index], e[index], e[train], t[train])
 
         return nll_fold
-
-class DSMExperiment(Experiment):
-
-    def _fit_(self, x, t, e, x_val, t_val, e_val, hyperparameter):  
-        from dsm import DeepSurvivalMachines
-
-        epochs = hyperparameter.pop('epochs', 1000)
-        batch = hyperparameter.pop('batch', 250)
-        lr = hyperparameter.pop('learning_rate', 0.001)
-
-        model = DeepSurvivalMachines(**hyperparameter, cuda = torch.cuda.is_available())
-        model.fit(x, t, e, iters = epochs, batch_size = batch,
-                learning_rate = lr, val_data = (x_val, t_val, e_val))
-        
-        return model
-
-    def _nll_(self, model, x, t, e, *train):
-        return model.compute_nll(x, t, e)
-
-    def _predict_(self, model, x, times, r):
-        return pd.DataFrame(model.predict_survival(x, times.tolist()), columns = pd.MultiIndex.from_product([[r], times]))
 
 class DeepSurvExperiment(Experiment):
 
@@ -284,7 +270,7 @@ class DeepSurvExperiment(Experiment):
 
 class DeepHitExperiment(DeepSurvExperiment):
 
-    def __preprocess__(self, t, e):
+    def __preprocessTE__(self, t, e):
         dtype = lambda x: (x[0], x[1].astype('float32'))
         return dtype(self.labtrans.transform(t, e))
 
@@ -304,19 +290,19 @@ class DeepHitExperiment(DeepSurvExperiment):
         net = tt.practical.MLPVanilla(x.shape[1], nodes, self.labtrans.out_features, False)
         model = DeepHitSingle(net, tt.optim.Adam, duration_index = self.labtrans.cuts)
         model.optimizer.set_lr(lr)
-        model.fit(x.astype('float32'), self.__preprocess__(t, e), batch_size = batch, epochs = epochs, 
-                    callbacks = callbacks, val_data = (x_val.astype('float32'), self.__preprocess__(t_val, e_val)))
+        model.fit(x.astype('float32'), self.__preprocessTE__(t, e), batch_size = batch, epochs = epochs, 
+                    callbacks = callbacks, val_data = (x_val.astype('float32'), self.__preprocessTE__(t_val, e_val)))
         return model
 
     def _nll_(self, model, x, t, e, *train):
-        return model.score_in_batches(x.astype('float32'), self.__preprocess__(t, e))['loss']
+        return model.score_in_batches(x.astype('float32'), self.__preprocessTE__(t, e))['loss']
 
     def _predict_(self, model, x, times, r):
         return pd.DataFrame(from_surv_to_t(model.predict_surv_df(x.astype('float32')), times), columns = pd.MultiIndex.from_product([[r], times]))
 
 class CoxExperiment(Experiment):
 
-    def __preprocess__(self, x, t, e):
+    def __preprocessXTE__(self, x, t, e):
         res = pd.DataFrame(x)
         res['event'] = e
         res['duration'] = t
@@ -324,7 +310,7 @@ class CoxExperiment(Experiment):
 
     def _fit_(self, x, t, e, x_val, t_val, e_val, hyperparameter):  
         from lifelines import CoxPHFitter
-        data = self.__preprocess__(np.concatenate([x, x_val]), 
+        data = self.__preprocessXTE__(np.concatenate([x, x_val]), 
                                    np.concatenate([t, t_val]), 
                                    np.concatenate([e, e_val]))
 
@@ -333,12 +319,51 @@ class CoxExperiment(Experiment):
         return model
 
     def _nll_(self, model, x, t, e, *train):
-        return - model.score(self.__preprocess__(x, t, e))
+        return - model.score(self.__preprocessXTE__(x, t, e))
 
     def _predict_(self, model, x, times, r):
         return pd.DataFrame(model.predict_survival_function(pd.DataFrame(x), times).T.values, columns = pd.MultiIndex.from_product([[r], times]))
 
-class NSCExperiment(DSMExperiment):
+class SuMoExperiment(Experiment):
+
+    def _fit_(self, x, t, e, x_val, t_val, e_val, hyperparameter):  
+        from sumo import SuMo
+
+        epochs = hyperparameter.pop('epochs', 1000)
+        batch = hyperparameter.pop('batch', 250)
+        lr = hyperparameter.pop('learning_rate', 0.001)
+
+        model = SuMo(**hyperparameter, cuda = torch.cuda.is_available())
+        model.fit(x, t, e, n_iter = epochs, bs = batch,
+                lr = lr, val_data = (x_val, t_val, e_val))
+        
+        return model
+
+    def _nll_(self, model, x, t, e, *train):
+        return model.compute_nll(x, t, e)
+
+    def _predict_(self, model, x, times, r):
+        return pd.DataFrame(model.predict_survival(x, times.tolist()), columns = pd.MultiIndex.from_product([[r], times]))
+
+class DSMExperiment(SuMoExperiment):
+
+    def __preprocessT__(self, t, train = False):
+        return t + 1
+
+    def _fit_(self, x, t, e, x_val, t_val, e_val, hyperparameter):  
+        from dsm import DeepSurvivalMachines
+
+        epochs = hyperparameter.pop('epochs', 1000)
+        batch = hyperparameter.pop('batch', 250)
+        lr = hyperparameter.pop('learning_rate', 0.001)
+
+        model = DeepSurvivalMachines(**hyperparameter, cuda = torch.cuda.is_available())
+        model.fit(x, t, e, iters = epochs, batch_size = batch,
+                learning_rate = lr, val_data = (x_val, t_val, e_val))
+        
+        return model
+
+class NSCExperiment(SuMoExperiment):
 
     def save_results(self, x, t, e, times):
         clusters = {}
@@ -346,7 +371,7 @@ class NSCExperiment(DSMExperiment):
             model = self.best_model[i]
             train, test = x[self.fold_assignment != i], x[self.fold_assignment == i]
             train_index, test_index = self.fold_assignment[self.fold_assignment != i].index, self.fold_assignment[self.fold_assignment == i].index
-            times_cluster = np.quantile(t[e==1], np.linspace(0, 0.75, 10))
+            times_cluster = np.quantile(self.__preprocessT__(t[e==1]), np.linspace(0, 0.75, 10))
             
             if type(model) is dict:
                 clusters[i] = {}
@@ -355,14 +380,14 @@ class NSCExperiment(DSMExperiment):
                         'alphas_train': pd.DataFrame(model[r].predict_alphas(train), index = train_index),
                         'alphas_test': pd.DataFrame(model[r].predict_alphas(test), index = test_index),
                         'predictions': model[r].survival_cluster(times_cluster.tolist()),
-                        'importance': model[r].feature_importance(x[train_index], t[train_index], e[train_index] == r)
+                        'importance': model[r].feature_importance(x[train_index], self.__preprocessT__(t[train_index]), e[train_index] == r)
                     }
             elif len(self.risks) == 1:
                 clusters[i] = {
                     'alphas_train': pd.DataFrame(model.predict_alphas(train), index = train_index),
                     'alphas_test': pd.DataFrame(model.predict_alphas(test), index = test_index),
                     'predictions': model.survival_cluster(times_cluster.tolist()),
-                    'importance': model.feature_importance(x[train_index], t[train_index], e[train_index])
+                    'importance': model.feature_importance(x[train_index], self.__preprocessT__(t[train_index]), e[train_index])
                 }
             else:
                 clusters[i] = {}
@@ -371,22 +396,18 @@ class NSCExperiment(DSMExperiment):
                         'alphas_train': pd.DataFrame(model.predict_alphas(train, risk = r), index = train_index),
                         'alphas_test': pd.DataFrame(model.predict_alphas(test, risk = r), index = test_index),
                         'predictions': model.survival_cluster(times_cluster.tolist(), risk = r),
-                        'importance': model.feature_importance(x[train_index], t[train_index], e[train_index])
+                        'importance': model.feature_importance(x[train_index], self.__preprocessT__(t[train_index]), e[train_index])
                     }
 
         if self.tosave:
             pickle.dump(clusters, open(self.path + '_clusters.pickle', 'wb'))
 
-        return super().save_results(x, t, e, self.__preprocess__(times))
+        return super().save_results(x, t, e, times)
 
-    def __preprocess__(self, t, save = False):
+    def __preprocessT__(self, t, save = False):
         if save:
             self.max_t = t.max()
         return t / self.max_t
-
-    def train(self, x, t, e, cause_specific = False):
-        t_norm = self.__preprocess__(t, True)
-        return super().train(x, t_norm, e, cause_specific)
 
     def _fit_(self, x, t, e, x_val, t_val, e_val, hyperparameter):  
         from nsc import NeuralSurvivalCluster
@@ -404,26 +425,7 @@ class NSCExperiment(DSMExperiment):
     def _predict_(self, model, x, times, r):
         return pd.DataFrame(model.predict_survival(x, times.tolist(), r), columns = pd.MultiIndex.from_product([[r], times]))
 
-    def likelihood(self, x, t, e):
-        t_norm = self.__preprocess__(t)
-        return super().likelihood(x, t_norm, e)
-
-class SuMoExperiment(DSMExperiment):
-
-    def _fit_(self, x, t, e, x_val, t_val, e_val, hyperparameter):  
-        from sumo import SuMo
-
-        epochs = hyperparameter.pop('epochs', 1000)
-        batch = hyperparameter.pop('batch', 250)
-        lr = hyperparameter.pop('learning_rate', 0.001)
-
-        model = SuMo(**hyperparameter, cuda = torch.cuda.is_available())
-        model.fit(x, t, e, n_iter = epochs, bs = batch,
-                lr = lr, val_data = (x_val, t_val, e_val))
-        
-        return model
-
-class DCMExperiment(DSMExperiment):
+class DCMExperiment(SuMoExperiment):
 
     def save_results(self, x, t, e, times):
         clusters = {}
