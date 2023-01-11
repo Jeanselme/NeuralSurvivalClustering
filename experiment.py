@@ -347,9 +347,6 @@ class SuMoExperiment(Experiment):
 
 class DSMExperiment(SuMoExperiment):
 
-    def __preprocessT__(self, t, train = False):
-        return t + 1
-
     def _fit_(self, x, t, e, x_val, t_val, e_val, hyperparameter):  
         from dsm import DeepSurvivalMachines
 
