@@ -424,13 +424,30 @@ class NSCExperiment(SuMoExperiment):
 
 class DCMExperiment(SuMoExperiment):
 
+    def compute_cluster(self, model, x, t):
+        """
+            Compute the multiple clusters by hard assingment of all patients
+        """
+        # Hard assign all training points
+        cox = model.predict_alphas(x).argmax(1)
+        survival = model.predict_survival(x, t)
+
+        # Compute for all treatment cluster and cox cluster the average survival
+        clusters = []
+        for b in range(model.k):
+            selection = cox == b
+            if selection.sum() > 0:
+                clusters.append(survival[selection].mean(0).reshape((-1, 1)))
+
+        return np.concatenate(clusters, 1)
+
     def save_results(self, x, t, e, times):
         clusters = {}
         for i in self.best_model:
             model = self.best_model[i]
             train, test = x[self.fold_assignment != i], x[self.fold_assignment == i]
             train_index, test_index = self.fold_assignment[self.fold_assignment != i].index, self.fold_assignment[self.fold_assignment == i].index
-            times_cluster = np.quantile(t[e==1], np.linspace(0, 0.75, 10))
+            times_cluster = np.quantile(t[e==1], np.linspace(0, 0.75, 10)).tolist()
 
             if type(model) is dict:
                 clusters[i] = {}
@@ -438,13 +455,13 @@ class DCMExperiment(SuMoExperiment):
                    clusters[i][r] = {
                     'alphas_train': pd.DataFrame(model[r].predict_alphas(train), index = train_index),
                     'alphas_test': pd.DataFrame(model[r].predict_alphas(test), index = test_index),
-                    'predictions': np.vstack([model[r].torch_model[1][s](times_cluster) for s in model[r].torch_model[1]]).T,
+                    'predictions': self.compute_cluster(model[r], train, times_cluster),
                     } 
             else:
                 clusters[i] = {
                     'alphas_train': pd.DataFrame(model.predict_alphas(train), index = train_index),
                     'alphas_test': pd.DataFrame(model.predict_alphas(test), index = test_index),
-                    'predictions': np.vstack([model.torch_model[1][s](times_cluster) for s in model.torch_model[1]]).T,
+                    'predictions': self.compute_cluster(model, train, times_cluster),
                 }
 
         if self.tosave:
