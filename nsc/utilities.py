@@ -49,8 +49,7 @@ def train_nsc(model,
 			loss = total_loss(model,
 							  xb,
 							  tb,
-							  eb,
-							  model.weight_balance) 
+							  eb) 
 			loss.backward()
 			optimizer.step()
 

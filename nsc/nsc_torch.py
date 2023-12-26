@@ -85,10 +85,9 @@ def create_representation(inputdim, layers, activation, dropout = 0.5):
 class NeuralSurvivalClusterTorch(nn.Module):
 
   def __init__(self, inputdim, layers = [100, 100, 100], act = 'ReLU6', layers_surv = [100], representation = 50, act_surv = 'Tanh',
-               weight_balance = 1., risks = 1, k = 3, dropout = 0., optimizer = "Adam"):
+               risks = 1, k = 3, dropout = 0., optimizer = "Adam"):
     super(NeuralSurvivalClusterTorch, self).__init__()
     self.input_dim = inputdim
-    self.weight_balance = weight_balance # Used for balancing the loss between censored and uncensored
     self.risks = risks  # Competing risks
     self.k = k          # Number mixture
     self.representation = representation # Latent input for clusters (centroid representation)
