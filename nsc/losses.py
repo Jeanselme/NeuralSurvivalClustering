@@ -2,19 +2,15 @@ import torch
 import torch.nn as nn
 import numpy as np
 
-def total_loss(model, x, t, e, eps = 1e-10):
-
+def total_loss(model, x, t, e):
   # Go through network
-  cumulative, intensity, alphas = model.forward(x, t, gradient = True)
-  with torch.no_grad():
-    intensity.clamp_(eps)
+  log_alphas, log_beta, log_sr, taus = model.forward(x, t)
 
-  # Likelihood error
-  alphas = nn.LogSoftmax(dim = 1)(alphas)
-  cum = alphas - cumulative.sum(1) # Sum over all risks
-  error = - torch.logsumexp(cum[e == 0], dim = 1).sum() # Sum over the different mixture and then across patient
+  log_hr = model.gradient(log_sr, taus, e).log()
+  log_sr = log_alphas + log_beta + log_sr
+
+  error = - torch.logsumexp(log_sr[e == 0], dim = [1, 2]).sum() # Sum over the different mixture and risks, and then across patient
   for k in range(model.risks):
-      i = intensity[e == (k + 1)][:, k]
-      error -= torch.logsumexp(cum[e == (k + 1)] + torch.log(i), dim = 1).sum()
+      error -= torch.logsumexp(log_sr[e == (k + 1)][:, k] + log_hr[e == (k + 1)], dim = 1).sum() # Sum over the different mixture 
 
   return error / len(x)

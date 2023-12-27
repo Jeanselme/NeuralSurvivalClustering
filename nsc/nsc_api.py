@@ -117,7 +117,8 @@ class NeuralSurvivalCluster(DSMBase):
       scores = []
       for t_ in t:
         t_ = torch.DoubleTensor([t_] * len(x)).to(x.device)
-        outcomes, _, _ = self.torch_model.predict(x, t_)
+        log_alphas, log_betas, log_sr, _  = self.torch_model(x, t_)
+        outcomes = 1 - ((log_alphas + log_betas).exp() * (1 - log_sr.exp())).sum(-1) 
         scores.append(outcomes[:, int(risk) - 1].unsqueeze(1).detach().cpu().numpy())
       return np.concatenate(scores, axis = 1)
     else:
@@ -125,7 +126,7 @@ class NeuralSurvivalCluster(DSMBase):
                       "model using the `fit` method on some training data " +
                       "before calling `predict_survival`.")
 
-  def predict_alphas(self, x, risk = 1):
+  def predict_alphas(self, x):
     """
       This method computes the weights on the population's distributions for the given input.
 
@@ -141,8 +142,8 @@ class NeuralSurvivalCluster(DSMBase):
     """
     x = self._preprocess_test_data(x)
     if self.fitted:
-      _, alphas, _ = self.torch_model.predict(x, torch.zeros(len(x), dtype = torch.double).to(x.device))
-      return alphas[:, int(risk) - 1, :].detach().cpu().numpy()
+      log_alphas, _, _, _ = self.torch_model(x, torch.zeros(len(x), dtype = torch.double).to(x.device))
+      return log_alphas[:, 0, :].exp().detach().cpu().numpy()
     else:
       raise Exception("The model has not been fitted yet. Please fit the " +
                       "model using the `fit` method on some training data " +
@@ -172,14 +173,14 @@ class NeuralSurvivalCluster(DSMBase):
       if self.cuda > 0:
         x, t = x.cuda(), t.cuda()
 
-      _, _, cumulative = self.torch_model.predict(x, t)
-      return cumulative[:, int(risk) - 1, :].detach().cpu().numpy()
+      _, log_betas, log_sr, _ = self.torch_model(x, t)
+      return 1 - (log_betas.exp() * (1 - log_sr.exp()))[:, int(risk) - 1, :].detach().cpu().numpy()
     else:
       raise Exception("The model has not been fitted yet. Please fit the " +
                       "model using the `fit` method on some training data " +
                       "before calling `survival_cluster`.")
 
-  def feature_importance(self, x, t, e, n = 100):
+  def feature_importance(self, x, t, e, risk = None, n = 100):
     """
       This method computes the features' importance by a  random permutation of the input variables.
 
@@ -199,6 +200,8 @@ class NeuralSurvivalCluster(DSMBase):
         (dict, dict): Dictionary of the mean impact on likelihood and normal confidence interval
 
     """
+    if not(risk is None):
+      e = e == risk # Cause specific computation for risk
     global_nll = self.compute_nll(x, t, e)
     permutation = np.arange(len(x))
     performances = {j: [] for j in range(x.shape[1])}

@@ -62,24 +62,27 @@ def create_representation_positive(inputdim, layers, activation, dropout = 0):
 
   return nn.Sequential(*modules)
 
-def create_representation(inputdim, layers, activation, dropout = 0.5):
+def create_representation(inputdim, layers, activation, dropout = 0., last = None):
   if activation == 'ReLU6':
-    act = nn.ReLU6()
+      act = nn.ReLU6()
   elif activation == 'ReLU':
-    act = nn.ReLU()
+      act = nn.ReLU()
   elif activation == 'Tanh':
-    act = nn.Tanh()
+      act = nn.Tanh()
 
   modules = []
   prevdim = inputdim
 
   for hidden in layers:
-    modules.append(nn.Linear(prevdim, hidden, bias=True))
-    if dropout > 0:
-      modules.append(nn.Dropout(p = dropout))
-    modules.append(act)
-    prevdim = hidden
-  
+      modules.append(nn.Linear(prevdim, hidden, bias=True))
+      if dropout > 0:
+          modules.append(nn.Dropout(p = dropout))
+      modules.append(act)
+      prevdim = hidden
+
+  if last is not None:
+      modules[-1] = last
+
   return nn.Sequential(*modules)
 
 class NeuralSurvivalClusterTorch(nn.Module):
@@ -94,45 +97,33 @@ class NeuralSurvivalClusterTorch(nn.Module):
     self.dropout = dropout
     self.optimizer = optimizer
 
-    self.profile = create_representation(inputdim, layers + [self.k], act, self.dropout)
-    self.latent = nn.ParameterList([nn.Parameter(torch.randn((1, self.representation))) for _ in range(self.k)])
-    self.outcome = nn.ModuleList([create_representation_positive(1 + self.representation, layers_surv + [risks], act_surv, self.dropout) for _ in range(self.k)])
-    self.competing = create_representation(inputdim, layers + [risks], act, self.dropout)
-    self.soft = nn.Softmax(dim = 1)
+    self.profile = create_representation(inputdim, layers + [self.k], act, self.dropout, last = nn.LogSoftmax(dim = 1)) # Proba for cluster P(cluster | x)
+    self.latent = nn.ParameterList([nn.Parameter(torch.randn((risks, self.representation))) for _ in range(self.k)])
+    self.outcome = nn.ModuleList([create_representation_positive(1 + self.representation, layers_surv + [1], act_surv, self.dropout) for _ in range(self.k)]) # Model P(survival | risk, cluster)
+    self.competing = nn.ParameterList([nn.Parameter(torch.randn(risks)) for _ in range(self.k)]) # Proba for the given risk P(risk | cluster) - Fixed for a cluster
+    self.softlog = nn.LogSoftmax(dim = 0)
 
-  def forward(self, x, horizon, gradient = False):
-    if self.risks == 1:
-      betas = 1
-    else:
-      betas = self.soft(self.competing(x))
+  def forward(self, x, horizon):
+    # Compute proba cluster len(x) * 1 * k
+    log_alphas = torch.zeros((len(x), 1, 1), requires_grad = True).float().to(x.device) if self.k == 1 else \
+                 self.profile(x).unsqueeze(1)
 
-    if self.k == 1:
-      alphas = torch.ones((len(x), self.k), requires_grad = True).float().to(x.device)
-    else:
-      alphas = self.profile(x)
+    # For each cluster
+    log_sr, log_beta = [], []
+    tau_outcome = [horizon.clone().detach().requires_grad_(True).unsqueeze(1) for _ in range(self.k)] # Requires independent clusters
+    for outcome, latent, balance, tau in zip(self.outcome, self.latent, self.competing, tau_outcome):
+      latent = latent.repeat_interleave(len(x), dim = 0) # Shape: (risks * len(x)), rep - One for each risk
+      tau = tau.repeat(self.risks, 1) # Shape (len(x) * risks), 1
 
-    # Compute intensity and cumulative function
-    cumulative, intensity = [], []
-    for latent, outcome_competing in zip(self.latent, self.outcome):
-      latent = latent.repeat(len(x), 1)
-      tau_outcome = horizon.clone().detach().requires_grad_(gradient) # Copy with independent gradient
-      outcome = outcome_competing(torch.cat((latent, tau_outcome.unsqueeze(1)), 1))
-      outcome = outcome - outcome_competing(torch.cat((latent, torch.zeros_like(tau_outcome.unsqueeze(1))), 1))
-      outcome = betas * outcome
-      cumulative.append(outcome.unsqueeze(-1))
-      if gradient:
-        int = []
-        for r in range(self.risks):
-          int.append(grad(outcome[:, r].sum(), tau_outcome, create_graph = True)[0].unsqueeze(1))
-        int = torch.cat(int, -1).unsqueeze(-1)
-        intensity.append(int)
+      # Compute survival distribution for each distribution 
+      logOutcome = tau * outcome(torch.cat((latent, tau), 1)) # Outcome at time t for all risks
+      log_sr.append(- torch.cat(torch.split(logOutcome, len(x), 0), 1).unsqueeze(-1)) # len(x), risks
+      log_beta.append(self.softlog(balance).unsqueeze(0).repeat(len(x), 1).unsqueeze(-1)) # Balance between risks in this cluster (fixed for the cluster)
 
-    cumulative = torch.cat(cumulative, -1)
-    intensity = torch.cat(intensity, -1) if gradient else None
-    
-    return cumulative, intensity, alphas
-
-  def predict(self, x, horizon):
-    cumulative, _, alphas = self.forward(x, horizon)
-    alphas = nn.Softmax(dim = 1)(alphas).unsqueeze(1).repeat(1, self.risks, 1) # Repeat alpha for each risk
-    return torch.sum(alphas * torch.exp(-cumulative), dim = 2), alphas, torch.exp(-cumulative)
+    log_sr = torch.cat(log_sr, -1)  # Dim: Point * Risks * Cluster
+    log_beta = torch.cat(log_beta, -1) # Dim: Point * Risks * Cluster
+    return log_alphas, log_beta, log_sr, tau_outcome
+  
+  def gradient(self, outcomes, horizon, e):
+    # Avoid computation of all gradients by focusing on the one used later
+    return torch.cat(grad([- outcomes[:, risk][e == (risk + 1)].sum() for risk in range(self.risks)], horizon, create_graph = True), 1).clamp_(1e-10)
