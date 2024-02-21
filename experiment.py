@@ -2,11 +2,8 @@
     This file contains the experimental framework with cross validation
     For new methods, add a child method to Experiment
 """
-
-from sksurv.metrics import integrated_brier_score
-from sklearn.model_selection import ParameterSampler
 from sklearn.preprocessing import StandardScaler
-from sklearn.model_selection import KFold
+from sklearn.model_selection import GroupKFold, StratifiedKFold, ShuffleSplit, ParameterSampler, train_test_split
 import pandas as pd
 import numpy as np
 import pickle
@@ -43,8 +40,8 @@ class ToyExperiment():
 
 class Experiment():
 
-    def __init__(self, hyper_grid = None, n_iter = 100, 
-                random_seed = 0, times = [0.25, 0.5, 0.75], path = 'results', save = True):
+    def __init__(self, hyper_grid = None, n_iter = 100, k = 5,
+                random_seed = 0, times = 100, path = 'results', save = True):
         """
             Initializes a new experiment
 
@@ -52,13 +49,14 @@ class Experiment():
                 hyper_grid (dictionary, optional): Dictionary of values for the different parameters to search. Defaults to None.
                 n_iter (int, optional): Number of iterations of the random search. Defaults to 100.
                 random_seed (int, optional): Random seed for reproducibility. Defaults to 0.
-                times (list, optional): Times at which the model is evaluated. Defaults to [0.25, 0.5, 0.75].
+                times (list, optional): Times at which the model is evaluated. Defaults to 100.
                 path (str, optional): Path to save model and data. Defaults to 'results'.
                 save (bool, optional): If True, save the model and results otherwise returned at end of fit(). Defaults to True.
         """
         self.hyper_grid = list(ParameterSampler(hyper_grid, n_iter = n_iter, random_state = random_seed) if hyper_grid is not None else [{}])
         self.random_seed = random_seed
         self.times = times
+        self.k = k
         
         # Allows to reload a previous model
         self.iter, self.fold = 0, 0
@@ -70,8 +68,8 @@ class Experiment():
         self.tosave = save
 
     @classmethod
-    def create(cls, hyper_grid = None, n_iter = 100, 
-                random_seed = 0, times = [0.25, 0.5, 0.75], path = 'results', force = False, save = True):
+    def create(cls, hyper_grid = None, n_iter = 100, k = 5,
+                random_seed = 0, times = 100, path = 'results', force = False, save = True):
         if not(force):
             if os.path.isfile(path + '.csv'):
                 return ToyExperiment()
@@ -84,7 +82,7 @@ class Experiment():
                     os.remove(path + '.pickle')
                     pass
                 
-        return cls(hyper_grid, n_iter, random_seed, times, path, save)
+        return cls(hyper_grid, n_iter, k, random_seed, times, path, save)
 
     @staticmethod
     def load(path):
@@ -157,17 +155,25 @@ class Experiment():
             Returns:
                 (Dict, Dict): Dict of fitted model and Dict of observed performances
         """
+        self.times = np.linspace(t.min(), t.max(), self.times) if isinstance(self.times, int) else self.times
         self.scaler = StandardScaler()
         x = self.scaler.fit_transform(x)
 
         self.risks = np.unique(e[e > 0])
         self.fold_assignment = pd.Series(0, index = range(len(x)))
-        kf = KFold(random_state = self.random_seed, shuffle = True)
+        groups = None
+        if isinstance(self.k, list):
+            kf = GroupKFold()
+            groups = self.k
+        elif self.k == 1:
+            kf = ShuffleSplit(n_splits = self.k, random_state = self.random_seed, test_size = 0.2)
+        else:
+            kf = StratifiedKFold(n_splits = self.k, random_state = self.random_seed, shuffle = True)
 
         # First initialization
         if self.best_nll is None:
             self.best_nll = {r: np.inf for r in self.risks} if (cause_specific and len(self.risks) > 1) else np.inf
-        for i, (train_index, test_index) in enumerate(kf.split(x)):
+        for i, (train_index, test_index) in enumerate(kf.split(x, e, groups = groups)):
             self.fold_assignment[test_index] = i
             if i < self.fold: continue # When reload: start last point
             print('Fold {}'.format(i))
@@ -362,45 +368,6 @@ class DSMExperiment(SuMoExperiment):
 
 class NSCExperiment(SuMoExperiment):
 
-    def save_results(self, x, t, e, times):
-        clusters = {}
-        for i in self.best_model:
-            model = self.best_model[i]
-            train, test = x[self.fold_assignment != i], x[self.fold_assignment == i]
-            train_index, test_index = self.fold_assignment[self.fold_assignment != i].index, self.fold_assignment[self.fold_assignment == i].index
-            times_cluster = np.quantile(self.__preprocessT__(t[e==1]), np.linspace(0, 0.75, 10))
-            
-            if type(model) is dict:
-                clusters[i] = {}
-                for r in model:
-                    clusters[i][r] = {
-                        'alphas_train': pd.DataFrame(model[r].predict_alphas(train), index = train_index),
-                        'alphas_test': pd.DataFrame(model[r].predict_alphas(test), index = test_index),
-                        'predictions': model[r].survival_cluster(times_cluster.tolist()),
-                        'importance': model[r].feature_importance(x[train_index], self.__preprocessT__(t[train_index]), e[train_index] == r)
-                    }
-            elif len(self.risks) == 1:
-                clusters[i] = {
-                    'alphas_train': pd.DataFrame(model.predict_alphas(train), index = train_index),
-                    'alphas_test': pd.DataFrame(model.predict_alphas(test), index = test_index),
-                    'predictions': model.survival_cluster(times_cluster.tolist()),
-                    'importance': model.feature_importance(x[train_index], self.__preprocessT__(t[train_index]), e[train_index])
-                }
-            else:
-                clusters[i] = {}
-                for r in self.risks:
-                    clusters[i][r] = {
-                        'alphas_train': pd.DataFrame(model.predict_alphas(train, risk = r), index = train_index),
-                        'alphas_test': pd.DataFrame(model.predict_alphas(test, risk = r), index = test_index),
-                        'predictions': model.survival_cluster(times_cluster.tolist(), risk = r),
-                        'importance': model.feature_importance(x[train_index], self.__preprocessT__(t[train_index]), e[train_index])
-                    }
-
-        if self.tosave:
-            pickle.dump(clusters, open(self.path + '_clusters.pickle', 'wb'))
-
-        return super().save_results(x, t, e, times)
-
     def __preprocessT__(self, t, save = False):
         if save:
             self.max_t = t.max()
@@ -440,35 +407,7 @@ class DCMExperiment(SuMoExperiment):
                 clusters.append(survival[selection].mean(0).reshape((-1, 1)))
 
         return np.concatenate(clusters, 1)
-
-    def save_results(self, x, t, e, times):
-        clusters = {}
-        for i in self.best_model:
-            model = self.best_model[i]
-            train, test = x[self.fold_assignment != i], x[self.fold_assignment == i]
-            train_index, test_index = self.fold_assignment[self.fold_assignment != i].index, self.fold_assignment[self.fold_assignment == i].index
-            times_cluster = np.quantile(t[e==1], np.linspace(0, 0.75, 10)).tolist()
-
-            if type(model) is dict:
-                clusters[i] = {}
-                for r in model:
-                   clusters[i][r] = {
-                    'alphas_train': pd.DataFrame(model[r].predict_alphas(train), index = train_index),
-                    'alphas_test': pd.DataFrame(model[r].predict_alphas(test), index = test_index),
-                    'predictions': self.compute_cluster(model[r], train, times_cluster),
-                    } 
-            else:
-                clusters[i] = {
-                    'alphas_train': pd.DataFrame(model.predict_alphas(train), index = train_index),
-                    'alphas_test': pd.DataFrame(model.predict_alphas(test), index = test_index),
-                    'predictions': self.compute_cluster(model, train, times_cluster),
-                }
-
-        if self.tosave:
-            pickle.dump(clusters, open(self.path + '_clusters.pickle', 'wb'))
-
-        return super().save_results(x, t, e, times)
-
+    
     def _fit_(self, x, t, e, x_val, t_val, e_val, hyperparameter):  
         from dsm.contrib import DeepCoxMixtures
 
