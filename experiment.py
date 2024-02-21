@@ -368,6 +368,45 @@ class DSMExperiment(SuMoExperiment):
 
 class NSCExperiment(SuMoExperiment):
 
+    def save_results(self, x, t, e, times):
+        clusters = {}
+        for i in self.best_model:
+            model = self.best_model[i]
+            train, test = x[self.fold_assignment != i], x[self.fold_assignment == i]
+            train_index, test_index = self.fold_assignment[self.fold_assignment != i].index, self.fold_assignment[self.fold_assignment == i].index
+            times_cluster = np.quantile(self.__preprocessT__(t[e==1]), np.linspace(0, 0.75, 10))
+            
+            if type(model) is dict:
+                clusters[i] = {}
+                for r in model:
+                    clusters[i][r] = {
+                        'alphas_train': pd.DataFrame(model[r].predict_alphas(train), index = train_index),
+                        'alphas_test': pd.DataFrame(model[r].predict_alphas(test), index = test_index),
+                        'predictions': model[r].survival_cluster(times_cluster.tolist()),
+                        'importance': model[r].feature_importance(x[train_index], self.__preprocessT__(t[train_index]), e[train_index] == r)
+                    }
+            elif len(self.risks) == 1:
+                clusters[i] = {
+                    'alphas_train': pd.DataFrame(model.predict_alphas(train), index = train_index),
+                    'alphas_test': pd.DataFrame(model.predict_alphas(test), index = test_index),
+                    'predictions': model.survival_cluster(times_cluster.tolist()),
+                    'importance': model.feature_importance(x[train_index], self.__preprocessT__(t[train_index]), e[train_index])
+                }
+            else:
+                clusters[i] = {}
+                for r in self.risks:
+                    clusters[i][r] = {
+                        'alphas_train': pd.DataFrame(model.predict_alphas(train, risk = r), index = train_index),
+                        'alphas_test': pd.DataFrame(model.predict_alphas(test, risk = r), index = test_index),
+                        'predictions': model.survival_cluster(times_cluster.tolist(), risk = r),
+                        'importance': model.feature_importance(x[train_index], self.__preprocessT__(t[train_index]), e[train_index])
+                    }
+
+        if self.tosave:
+            pickle.dump(clusters, open(self.path + '_clusters.pickle', 'wb'))
+
+        return super().save_results(x, t, e, times)
+
     def __preprocessT__(self, t, save = False):
         if save:
             self.max_t = t.max()
@@ -407,7 +446,35 @@ class DCMExperiment(SuMoExperiment):
                 clusters.append(survival[selection].mean(0).reshape((-1, 1)))
 
         return np.concatenate(clusters, 1)
-    
+
+    def save_results(self, x, t, e, times):
+        clusters = {}
+        for i in self.best_model:
+            model = self.best_model[i]
+            train, test = x[self.fold_assignment != i], x[self.fold_assignment == i]
+            train_index, test_index = self.fold_assignment[self.fold_assignment != i].index, self.fold_assignment[self.fold_assignment == i].index
+            times_cluster = np.quantile(t[e==1], np.linspace(0, 0.75, 10)).tolist()
+
+            if type(model) is dict:
+                clusters[i] = {}
+                for r in model:
+                   clusters[i][r] = {
+                    'alphas_train': pd.DataFrame(model[r].predict_alphas(train), index = train_index),
+                    'alphas_test': pd.DataFrame(model[r].predict_alphas(test), index = test_index),
+                    'predictions': self.compute_cluster(model[r], train, times_cluster),
+                    } 
+            else:
+                clusters[i] = {
+                    'alphas_train': pd.DataFrame(model.predict_alphas(train), index = train_index),
+                    'alphas_test': pd.DataFrame(model.predict_alphas(test), index = test_index),
+                    'predictions': self.compute_cluster(model, train, times_cluster),
+                }
+
+        if self.tosave:
+            pickle.dump(clusters, open(self.path + '_clusters.pickle', 'wb'))
+
+        return super().save_results(x, t, e, times)
+
     def _fit_(self, x, t, e, x_val, t_val, e_val, hyperparameter):  
         from dsm.contrib import DeepCoxMixtures
 
