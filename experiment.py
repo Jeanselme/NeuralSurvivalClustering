@@ -385,20 +385,13 @@ class NSCExperiment(SuMoExperiment):
                         'predictions': model[r].survival_cluster(times_cluster.tolist()),
                         'importance': model[r].feature_importance(x[train_index], self.__preprocessT__(t[train_index]), e[train_index] == r)
                     }
-            elif len(self.risks) == 1:
-                clusters[i] = {
-                    'alphas_train': pd.DataFrame(model.predict_alphas(train), index = train_index),
-                    'alphas_test': pd.DataFrame(model.predict_alphas(test), index = test_index),
-                    'predictions': model.survival_cluster(times_cluster.tolist()),
-                    'importance': model.feature_importance(x[train_index], self.__preprocessT__(t[train_index]), e[train_index])
-                }
             else:
                 clusters[i] = {}
                 for r in self.risks:
                     clusters[i][r] = {
-                        'alphas_train': pd.DataFrame(model.predict_alphas(train, risk = r), index = train_index),
-                        'alphas_test': pd.DataFrame(model.predict_alphas(test, risk = r), index = test_index),
-                        'predictions': model.survival_cluster(times_cluster.tolist(), risk = r),
+                        'alphas_train': pd.DataFrame(model.predict_alphas(train), index = train_index),
+                        'alphas_test': pd.DataFrame(model.predict_alphas(test), index = test_index),
+                        'predictions': model.survival_cluster(times_cluster.tolist()),
                         'importance': model.feature_importance(x[train_index], self.__preprocessT__(t[train_index]), e[train_index])
                     }
 
