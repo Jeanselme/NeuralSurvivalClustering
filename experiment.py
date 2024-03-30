@@ -274,7 +274,7 @@ class DeepSurvExperiment(Experiment):
     def _predict_(self, model, x, times, r):
         return pd.DataFrame(from_surv_to_t(model.predict_surv_df(x), times), columns = pd.MultiIndex.from_product([[r], times]))
 
-class DeepHitExperiment(DeepSurvExperiment):
+class DeepHitExperiment(Experiment):
 
     def __preprocessTE__(self, t, e):
         dtype = lambda x: (x[0], x[1].astype('float32'))
@@ -480,6 +480,29 @@ class DCMExperiment(SuMoExperiment):
                 learning_rate = lr, val_data = (x_val, t_val, e_val))
         
         return model
+    
+class SurvivalTreeExperiment(Experiment):
+    
+    def __preprocess__(self, t, e):
+        return np.array([(e[i], t[i]) for i in range(len(e))], dtype = [('e', bool), ('t', float)])
+    
+    def _fit_(self, x, t, e, x_val, t_val, e_val, hyperparameter):  
+        from sksurv.tree import SurvivalTree
+
+        # No validation set
+        x, t, e = np.concatenate([x, x_val]), np.concatenate([t, t_val]), np.concatenate([e, e_val])
+
+        model = SurvivalTree(**hyperparameter, random_state = self.random_seed)
+        model.fit(x, self.__preprocess__(t, e))
+        
+        return model
+
+    def _nll_(self, model, x, t, e, *train):
+        return - model.score(x, self.__preprocess__(t, e))
+
+    def _predict_(self, model, x, times, r):
+        return pd.DataFrame(from_surv_to_t(pd.DataFrame(model.predict_survival_function(x, return_array = True), columns = model.unique_times_).T, times), columns = pd.MultiIndex.from_product([[r], times]))
+
 
 # TODO: Add your method here
 class NewExperiment(Experiment):

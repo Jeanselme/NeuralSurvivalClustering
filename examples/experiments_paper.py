@@ -95,4 +95,10 @@ param_grid = {
 }
 NSCExperiment.create(param_grid, n_iter = grid_search, path = 'Results/{}_nsc'.format(dataset), times = times).train(x, t, e)
 
+## Survival tree
+param_grid = {
+    'max_depth': [2, 5, 10, 15]
+}
+SurvivalTreeExperiment.create(param_grid, n_iter = grid_search, path = 'Results/{}_st'.format(dataset), times = times).train(x, t, e)
+
 ## TODO: Add your method and the grid search of interest
