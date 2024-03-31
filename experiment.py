@@ -285,7 +285,7 @@ class DeepHitExperiment(Experiment):
         from pycox.models import DeepHitSingle
         import torchtuples as tt
 
-        self.labtrans = DeepHitSingle.label_transform([0] + self.times.tolist() + [t.max()])
+        self.labtrans = DeepHitSingle.label_transform([0] + self.times.tolist() + [t.max() + 1])
 
         nodes = hyperparameter.pop('nodes', 100)
         epochs = hyperparameter.pop('epochs', 1000)
