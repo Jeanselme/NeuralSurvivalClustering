@@ -40,7 +40,7 @@ class ToyExperiment():
 
 class Experiment():
 
-    def __init__(self, hyper_grid = None, n_iter = 100, k = 5,
+    def __init__(self, hyper_grid = None, n_iter = 100, fold = None, k = 5,
                 random_seed = 0, times = 100, path = 'results', save = True):
         """
             Initializes a new experiment
@@ -59,16 +59,17 @@ class Experiment():
         self.k = k
         
         # Allows to reload a previous model
+        self.all_fold = fold
         self.iter, self.fold = 0, 0
-        self.best_hyper = {i: {} for i in range(5)}
-        self.best_model = {i: {} for i in range(5)}
+        self.best_hyper = {}
+        self.best_model = {}
         self.best_nll = None
 
         self.path = path
         self.tosave = save
 
     @classmethod
-    def create(cls, hyper_grid = None, n_iter = 100, k = 5,
+    def create(cls, hyper_grid = None, n_iter = 100, fold = None, k = 5,
                 random_seed = 0, times = 100, path = 'results', force = False, save = True):
         if not(force):
             if os.path.isfile(path + '.csv'):
@@ -82,7 +83,7 @@ class Experiment():
                     os.remove(path + '.pickle')
                     pass
                 
-        return cls(hyper_grid, n_iter, k, random_seed, times, path, save)
+        return cls(hyper_grid, n_iter, fold, k, random_seed, times, path, save)
 
     @staticmethod
     def load(path):
@@ -91,9 +92,12 @@ class Experiment():
         """
         file = open(path, 'rb')
         if torch.cuda.is_available():
-            return pickle.load(file)
+            se = pickle.load(file)
+            se.times = 100
+            return se
         else:
             se = CPU_Unpickler(file).load()
+            se.times = 100
             for model in se.best_model:
                 if type(se.best_model[model]) is dict:
                     for m in se.best_model[model]:
@@ -101,7 +105,20 @@ class Experiment():
                 else:
                     se.best_model[model].cuda = False
             return se
-
+        
+    @classmethod
+    def merge(cls, hyper_grid = None, n_iter = 100, fold = None, k = 5,
+            random_seed = 0, times = 100, path = 'results', save = True):
+        merged = cls(hyper_grid, n_iter, fold, k, random_seed, times, path, save)
+        for i in range(k):
+            path_i = path + '_{}.pickle'.format(i)
+            if os.path.isfile(path_i):
+                merged.best_model[i] = cls.load(path_i).best_model[i]
+            else:
+                print('Fold {} has not been computed yet'.format(i))
+        merged.fold = k # Nothing to run
+        return merged
+    
     @staticmethod
     def save(obj):
         """
@@ -176,6 +193,7 @@ class Experiment():
         for i, (train_index, test_index) in enumerate(kf.split(x, e, groups = groups)):
             self.fold_assignment[test_index] = i
             if i < self.fold: continue # When reload: start last point
+            if not(self.all_fold is None) and (self.all_fold != i): continue
             print('Fold {}'.format(i))
             
             ten_percent = int(0.1 * len(train_index))
@@ -215,7 +233,10 @@ class Experiment():
             self.fold, self.iter = i + 1, 0
             self.best_nll = {r: np.inf for r in self.risks} if (cause_specific and len(self.risks) > 1) else np.inf
             Experiment.save(self)
-        return self.save_results(x, t, e, self.times)
+
+        if self.all_fold is None:
+            Experiment.save(self)
+            return self.save_results(x, self.times)
 
     def _fit_(self, *params):
         """
