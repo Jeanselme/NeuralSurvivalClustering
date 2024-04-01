@@ -72,6 +72,7 @@ class Experiment():
     def create(cls, hyper_grid = None, n_iter = 100, fold = None, k = 5,
                 random_seed = 0, times = 100, path = 'results', force = False, save = True):
         if not(force):
+            path = path if fold is None else path + '_{}'.format(fold)
             if os.path.isfile(path + '.csv'):
                 return ToyExperiment()
             elif os.path.isfile(path + '.pickle'):
