@@ -237,7 +237,7 @@ class Experiment():
 
         if self.all_fold is None:
             Experiment.save(self)
-            return self.save_results(x, self.times)
+            return self.save_results(x, t, e, self.times)
 
     def _fit_(self, *params):
         """
