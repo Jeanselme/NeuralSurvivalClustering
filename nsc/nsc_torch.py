@@ -98,8 +98,8 @@ class NeuralSurvivalClusterTorch(nn.Module):
     self.optimizer = optimizer
 
     self.profile = create_representation(inputdim, layers + [self.k], act, self.dropout, last = nn.LogSoftmax(dim = 1)) # Proba for cluster P(cluster | x)
-    self.latent = nn.ParameterList([nn.Parameter(torch.randn((risks, self.representation))) for _ in range(self.k)])
-    self.outcome = nn.ModuleList([create_representation_positive(1 + self.representation, layers_surv + [1], act_surv, self.dropout) for _ in range(self.k)]) # Model P(survival | risk, cluster)
+    self.latent = nn.ParameterList([nn.Parameter(torch.randn((1, self.representation))) for _ in range(self.k)])
+    self.outcome = nn.ModuleList([create_representation_positive(1 + self.representation, layers_surv + [risks], act_surv, self.dropout) for _ in range(self.k)]) # Model P(survival | risk, cluster)
     self.competing = nn.ParameterList([nn.Parameter(torch.randn(risks)) for _ in range(self.k)]) # Proba for the given risk P(risk | cluster) - Fixed for a cluster
     self.softlog = nn.LogSoftmax(dim = 0)
 
@@ -112,10 +112,8 @@ class NeuralSurvivalClusterTorch(nn.Module):
     log_sr, log_beta = [], []
     tau_outcome = [horizon.clone().detach().requires_grad_(True).unsqueeze(1) for _ in range(self.k)] # Requires independent clusters
     for outcome, latent, balance, tau in zip(self.outcome, self.latent, self.competing, tau_outcome):
-      latent = latent.repeat_interleave(len(x), dim = 0) # Shape: (risks * len(x)), rep - One for each risk
-      tau = tau.repeat(self.risks, 1) # Shape (len(x) * risks), 1
-
       # Compute survival distribution for each distribution 
+      latent = latent.repeat(len(x), 1) # Shape: len(x) * representation
       logOutcome = tau * outcome(torch.cat((latent, tau), 1)) # Outcome at time t for all risks
       log_sr.append(- torch.cat(torch.split(logOutcome, len(x), 0), 1).unsqueeze(-1)) # len(x), risks
       log_beta.append(self.softlog(balance).unsqueeze(0).repeat(len(x), 1).unsqueeze(-1)) # Balance between risks in this cluster (fixed for the cluster)
