@@ -111,6 +111,7 @@ class NeuralSurvivalClusterTorch(nn.Module):
     # For each cluster
     log_sr, log_beta = [], []
     tau_outcome = [horizon.clone().detach().requires_grad_(True).unsqueeze(1) for _ in range(self.k)] # Requires independent clusters
+    self.latent._size, self.competing._size = self.k, self.k
     for outcome, latent, balance, tau in zip(self.outcome, self.latent, self.competing, tau_outcome):
       # Compute survival distribution for each distribution 
       latent = latent.repeat(len(x), 1) # Shape: len(x) * representation
