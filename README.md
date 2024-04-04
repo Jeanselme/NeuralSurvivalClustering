@@ -12,8 +12,14 @@ To use the model, one needs to execute:
 ```python
 from nsc import NeuralSurvivalClustering
 model = NeuralSurvivalClustering()
-model.fit(x, t, e)
-model.predict_risk(x)
+model.fit(x, t, e) # Fit the model on covariates x, with event time t, and event indicator e (e = 1 means event)
+model.predict_survival(x, horizon) # Predict the survival for covariates x at a given horizon 
+```
+
+To then explore the clustering structre:
+```python
+model.predict_alphas(x) # Obtain the soft assignemnt to the different cluster
+model.survival_cluster(horizons) # Compute the survival of the different clusters at different horizons
 ```
 
 A full example with analysis is provided in `examples/Neural Survival Clustering on SUPPORT Dataset.ipynb`.
