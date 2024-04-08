@@ -296,7 +296,7 @@ class DeepHitExperiment(Experiment):
         from pycox.models import DeepHitSingle, DeepHit
         with open(obj.path + '.pickle', 'wb') as output:
             try:
-                obj_save = copy.deepcopy(obj)
+                obj_save = copy.copy(obj)
                 for i in obj.best_model:
                     # Split model and save components (error pickle otherwise)
                     if isinstance(obj.best_model[i], DeepHit) or isinstance(obj.best_model[i], DeepHitSingle):
@@ -393,7 +393,7 @@ class DeepSurvExperiment(Experiment):
         from pycox.models import CoxPH
         with open(obj.path + '.pickle', 'wb') as output:
             try:
-                obj_save = copy.deepcopy(obj)
+                obj_save = copy.copy(obj)
                 for i in obj.best_model:
                     # Split model and save components (error pickle otherwise)
                     if isinstance(obj.best_model[i], CoxPH):
