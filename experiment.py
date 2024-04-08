@@ -9,6 +9,7 @@ import pandas as pd
 import numpy as np
 import pickle
 import torch
+import copy
 import os
 import io
 
@@ -93,16 +94,19 @@ class Experiment():
     @classmethod
     def merge(cls, hyper_grid = None, n_iter = 100, fold = None, k = 5,
             random_seed = 0, times = 100, path = 'results', save = True):
-        merged = cls(hyper_grid, n_iter, fold, k, random_seed, times, path, save)
-        merged.times = times
-        for i in range(k):
-            path_i = path + '_{}.pickle'.format(i)
-            if os.path.isfile(path_i):
-                merged.best_model[i] = cls.load(path_i).best_model[i]
-            else:
-                print('Fold {} has not been computed yet'.format(i))
-        merged.fold = k # Nothing to run
-        return merged
+        if os.path.isfile(path + '.csv'):
+            print(path)
+            return cls.load(path + '.pickle')
+        else:
+            merged = cls(hyper_grid, n_iter, fold, k, random_seed, times, path, save)
+            for i in range(k):
+                path_i = path + '_{}.pickle'.format(i)
+                if os.path.isfile(path_i):
+                    merged.best_model[i] = cls.load(path_i).best_model[i]
+                else:
+                    print('Fold {} has not been computed yet'.format(i))
+            merged.fold = k # Nothing to run
+            return merged
 
     @staticmethod
     def save(obj):
@@ -194,6 +198,7 @@ class Experiment():
             self.save(self)
 
         if self.all_fold is None:
+            self.save(self)
             return self.save_results(x)
 
     def _fit_(self, *params):
@@ -291,11 +296,12 @@ class DeepHitExperiment(Experiment):
         from pycox.models import DeepHitSingle, DeepHit
         with open(obj.path + '.pickle', 'wb') as output:
             try:
+                obj_save = copy.deepcopy(obj)
                 for i in obj.best_model:
                     # Split model and save components (error pickle otherwise)
                     if isinstance(obj.best_model[i], DeepHit) or isinstance(obj.best_model[i], DeepHitSingle):
-                        obj.best_model[i] = (obj.best_model[i].net, obj.best_model[i].duration_index)
-                pickle.dump(obj, output)
+                        obj_save.best_model[i] = (obj.best_model[i].net, obj.best_model[i].duration_index)
+                pickle.dump(obj_save, output)
             except Exception as e:
                 print('Unable to save object')
 
@@ -387,12 +393,14 @@ class DeepSurvExperiment(Experiment):
         from pycox.models import CoxPH
         with open(obj.path + '.pickle', 'wb') as output:
             try:
+                obj_save = copy.deepcopy(obj)
                 for i in obj.best_model:
                     # Split model and save components (error pickle otherwise)
                     if isinstance(obj.best_model[i], CoxPH):
-                        obj.best_model[i] = (obj.best_model[i].net, obj.best_model[i].baseline_hazards_, obj.best_model[i].baseline_cumulative_hazards_)
-                pickle.dump(obj, output)
+                        obj_save.best_model[i] = (obj.best_model[i].net, obj.best_model[i].baseline_hazards_, obj.best_model[i].baseline_cumulative_hazards_)
+                pickle.dump(obj_save, output)
             except Exception as e:
+                raise(e)
                 print('Unable to save object')
 
     def _fit_(self, x, t, e, x_val, t_val, e_val, hyperparameter):  
