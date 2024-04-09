@@ -297,6 +297,7 @@ class DeepHitExperiment(Experiment):
         with open(obj.path + '.pickle', 'wb') as output:
             try:
                 obj_save = copy.copy(obj)
+                obj_save.best_model = {}
                 for i in obj.best_model:
                     # Split model and save components (error pickle otherwise)
                     if isinstance(obj.best_model[i], DeepHit) or isinstance(obj.best_model[i], DeepHitSingle):
@@ -394,13 +395,13 @@ class DeepSurvExperiment(Experiment):
         with open(obj.path + '.pickle', 'wb') as output:
             try:
                 obj_save = copy.copy(obj)
+                obj_save.best_model = {}
                 for i in obj.best_model:
                     # Split model and save components (error pickle otherwise)
                     if isinstance(obj.best_model[i], CoxPH):
                         obj_save.best_model[i] = (obj.best_model[i].net, obj.best_model[i].baseline_hazards_, obj.best_model[i].baseline_cumulative_hazards_)
                 pickle.dump(obj_save, output)
             except Exception as e:
-                raise(e)
                 print('Unable to save object')
 
     def _fit_(self, x, t, e, x_val, t_val, e_val, hyperparameter):  
